@@ -1,141 +1,196 @@
-# ╔════════════════════════════════════════════════════════════════╗
-# ║         StaffTrack GitHub Deployment Script                     ║
-# ║         For Windows PowerShell                                   ║
-# ╚════════════════════════════════════════════════════════════════╝
+# ============================================================
+# StaffTrack - GitHub + Firebase Deployment Script
+# ============================================================
 
-# ⚠️  BEFORE RUNNING THIS SCRIPT:
-# 1. Create GitHub repo at https://github.com/new (name: stafftrack)
-# 2. Update Firebase config in index.html
-# 3. Get your HTTPS repo URL from GitHub
+$ErrorActionPreference = "Stop"
 
-Write-Host "
-╔════════════════════════════════════════════════════════════════╗
-║     🚀 StaffTrack — GitHub Deployment Script                 ║
-║        Deploys your app to GitHub Pages + Firebase            ║
-╚════════════════════════════════════════════════════════════════╝
-" -ForegroundColor Cyan
+function Write-Step($message) {
+    Write-Host ""
+    Write-Host "== $message ==" -ForegroundColor Cyan
+}
+
+function Write-Info($message) {
+    Write-Host "   $message" -ForegroundColor Gray
+}
+
+function Write-Success($message) {
+    Write-Host "[OK] $message" -ForegroundColor Green
+}
+
+function Write-ErrorMsg($message) {
+    Write-Host "[ERROR] $message" -ForegroundColor Red
+}
 
 # Configuration
 $REPO_DIR = "C:\stafftrack-local"
 $REPO_URL = ""
 
-# Get repo URL from user
-Write-Host "`n📋 STEP 1: Enter Your GitHub Repository URL" -ForegroundColor Yellow
-Write-Host "   Example: https://github.com/your-username/stafftrack.git" -ForegroundColor Gray
-$REPO_URL = Read-Host "   Enter repo URL"
+# Header
+Write-Host ""
+Write-Host "=============================================" -ForegroundColor Cyan
+Write-Host " StaffTrack - GitHub + Firebase Deployment   " -ForegroundColor Cyan
+Write-Host "=============================================" -ForegroundColor Cyan
+
+# STEP 1 - Repo URL
+Write-Step "STEP 1: Enter GitHub Repository URL"
+$REPO_URL = Read-Host "Enter repo URL"
 
 if ([string]::IsNullOrWhiteSpace($REPO_URL)) {
-    Write-Host "❌ Error: Repository URL is required!" -ForegroundColor Red
+    Write-ErrorMsg "Repository URL is required."
     exit 1
 }
 
-Write-Host "`n🔍 Verifying repository URL..." -ForegroundColor Cyan
-if (-not $REPO_URL.Contains("github.com")) {
-    Write-Host "❌ Error: Invalid GitHub URL!" -ForegroundColor Red
+if ($REPO_URL -notmatch "github\.com") {
+    Write-ErrorMsg "Invalid GitHub URL."
     exit 1
 }
-Write-Host "✅ URL looks good!" -ForegroundColor Green
 
-# Navigate to directory
-Write-Host "`n📂 STEP 2: Preparing Directory" -ForegroundColor Yellow
+Write-Success "Repository URL validated"
+
+# STEP 2 - Directory
+Write-Step "STEP 2: Preparing Directory"
+
+if (-not (Test-Path $REPO_DIR)) {
+    Write-ErrorMsg "Directory not found: $REPO_DIR"
+    exit 1
+}
+
 Set-Location $REPO_DIR
-Write-Host "   Location: $REPO_DIR" -ForegroundColor Gray
-Write-Host "   Contents:" -ForegroundColor Gray
-Get-ChildItem -Name | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
+Write-Info "Location: $REPO_DIR"
 
-# Initialize Git
-Write-Host "`n🔄 STEP 3: Initializing Git Repository" -ForegroundColor Yellow
-if (Test-Path ".git") {
-    Write-Host "   ℹ️  Git already initialized, skipping..." -ForegroundColor Gray
-} else {
-    git init
-    Write-Host "✅ Git initialized" -ForegroundColor Green
+# STEP 3 - Git Check
+Write-Step "STEP 3: Checking Git"
+
+try {
+    git --version | Out-Null
+    Write-Success "Git installed"
+} catch {
+    Write-ErrorMsg "Git not installed"
+    exit 1
 }
 
-# Add files
-Write-Host "`n📦 STEP 4: Staging Files" -ForegroundColor Yellow
+# STEP 4 - Init Git
+Write-Step "STEP 4: Initializing Git"
+
+if (-not (Test-Path ".git")) {
+    git init
+    Write-Success "Git initialized"
+} else {
+    Write-Info "Git already initialized"
+}
+
+# STEP 5 - Stage + Commit
+Write-Step "STEP 5: Commit Changes"
+
 git add .
-Write-Host "✅ Files staged" -ForegroundColor Green
 
-# Commit
-Write-Host "`n💾 STEP 5: Creating Commit" -ForegroundColor Yellow
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-git commit -m "Deploy StaffTrack: Firebase + Mobile layout ($timestamp)"
-Write-Host "✅ Commit created" -ForegroundColor Green
+git commit -m "Deploy StaffTrack ($timestamp)" 2>$null
 
-# Add remote
-Write-Host "`n🔗 STEP 6: Connecting to GitHub" -ForegroundColor Yellow
+if ($LASTEXITCODE -ne 0) {
+    Write-Info "No changes to commit"
+} else {
+    Write-Success "Commit created"
+}
 
-# Check if remote already exists
-$remoteExists = git remote get-url origin 2>$null
-if ($remoteExists -and $remoteExists -ne "") {
-    Write-Host "   ℹ️  Remote already configured, updating..." -ForegroundColor Gray
+# STEP 6 - Remote
+Write-Step "STEP 6: Configure Remote"
+
+$existingRemote = git remote get-url origin 2>$null
+
+if ($existingRemote) {
     git remote remove origin
+    Write-Info "Old remote removed"
 }
 
 git remote add origin $REPO_URL
-Write-Host "✅ Remote added" -ForegroundColor Green
+Write-Success "Remote configured"
 
-# Push to GitHub
-Write-Host "`n📤 STEP 7: Pushing to GitHub" -ForegroundColor Yellow
-Write-Host "   ⚠️  You may be prompted for authentication" -ForegroundColor Yellow
-Write-Host "   💡 If asked for password, use a Personal Access Token:" -ForegroundColor Gray
-Write-Host "      1. GitHub Settings → Developer settings → Tokens" -ForegroundColor Gray
-Write-Host "      2. Create token with 'repo' scope" -ForegroundColor Gray
-Write-Host "      3. Paste token as password" -ForegroundColor Gray
+# STEP 7 - Push
+Write-Step "STEP 7: Push to GitHub"
 
 git branch -M main
 git push -u origin main
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "✅ Push successful!" -ForegroundColor Green
-} else {
-    Write-Host "❌ Push failed. Check your credentials and try again." -ForegroundColor Red
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorMsg "Push failed"
     exit 1
 }
 
-# Enable GitHub Pages
-Write-Host "`n🌐 STEP 8: GitHub Pages Setup" -ForegroundColor Yellow
-Write-Host "   Manual action required:" -ForegroundColor Yellow
-Write-Host "   1. Go to: https://github.com/YOUR-USERNAME/stafftrack" -ForegroundColor Gray
-Write-Host "   2. Click: Settings → Pages" -ForegroundColor Gray
-Write-Host "   3. Select: Deploy from branch" -ForegroundColor Gray
-Write-Host "   4. Choose: main / (root)" -ForegroundColor Gray
-Write-Host "   5. Click: Save" -ForegroundColor Gray
+Write-Success "Pushed to GitHub"
 
-# Extract username from URL
+# ============================================================
+# 🔥 FIREBASE DEPLOY SECTION
+# ============================================================
+
+Write-Step "STEP 8: Firebase Deployment"
+
+# Check Firebase CLI
+try {
+    firebase --version | Out-Null
+    Write-Success "Firebase CLI installed"
+} catch {
+    Write-ErrorMsg "Firebase CLI not installed"
+    Write-Info "Install with: npm install -g firebase-tools"
+    exit 0
+}
+
+# Check firebase.json
+if (-not (Test-Path "firebase.json")) {
+    Write-ErrorMsg "firebase.json not found"
+    Write-Info "Run: firebase init"
+    exit 0
+}
+
+# Check login
+Write-Info "Checking Firebase login..."
+firebase login:list | Out-Null
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Info "Opening login..."
+    firebase login
+}
+
+# Optional project selection
+Write-Info "Current Firebase project:"
+firebase use
+
+$changeProject = Read-Host "Change Firebase project? (y/n)"
+if ($changeProject -match "^[Yy]$") {
+    firebase use --add
+}
+
+# Deploy
+Write-Step "Deploying to Firebase"
+
+firebase deploy
+
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorMsg "Firebase deploy failed"
+    exit 1
+}
+
+Write-Success "Firebase deploy complete"
+
+# ============================================================
+# FINAL OUTPUT
+# ============================================================
+
 $username = [regex]::Match($REPO_URL, 'github\.com/([^/]+)/').Groups[1].Value
 
-Write-Host "`n" -ForegroundColor Green
-Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║                    ✅ DEPLOYMENT COMPLETE!                     ║" -ForegroundColor Green
-Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host ""
+Write-Host "=============================================" -ForegroundColor Green
+Write-Host "         DEPLOYMENT COMPLETE                 " -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
 
-Write-Host "`n📍 Your app will be live at:" -ForegroundColor Cyan
-Write-Host "   https://$username.github.io/stafftrack/" -ForegroundColor Green
+Write-Host ""
+Write-Host "GitHub Pages:" -ForegroundColor Cyan
+Write-Host "https://$username.github.io/stafftrack/" -ForegroundColor Green
 
-Write-Host "`n⏳ After enabling GitHub Pages (Step 8):" -ForegroundColor Yellow
-Write-Host "   • Wait 2-3 minutes for build to complete" -ForegroundColor Gray
-Write-Host "   • Then visit your URL above" -ForegroundColor Gray
-Write-Host "   • Login with: admin / password123" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Firebase Hosting:" -ForegroundColor Cyan
+Write-Host "Check your Firebase console for URL" -ForegroundColor Green
 
-Write-Host "`n🔄 To deploy future changes:" -ForegroundColor Yellow
-Write-Host "   cd C:\stafftrack-local" -ForegroundColor Gray
-Write-Host "   git add ." -ForegroundColor Gray
-Write-Host "   git commit -m 'Describe your changes'" -ForegroundColor Gray
-Write-Host "   git push origin main" -ForegroundColor Gray
-
-Write-Host "`n📚 Documentation:" -ForegroundColor Cyan
-Write-Host "   • Detailed guide: GITHUB_SETUP_WINDOWS.md" -ForegroundColor Gray
-Write-Host "   • Firebase guide: GITHUB_FIREBASE_DEPLOYMENT.md" -ForegroundColor Gray
-
-Write-Host "`n✨ Ready to deploy!`n" -ForegroundColor Green
-
-# Offer to open GitHub repo
-$open = Read-Host "Open GitHub repository in browser? (y/n)"
-if ($open -eq "y" -or $open -eq "Y") {
-    $repoPage = $REPO_URL -replace "\.git$", ""
-    Start-Process $repoPage
-}
+Write-Host ""
 
 Read-Host "Press Enter to exit"
