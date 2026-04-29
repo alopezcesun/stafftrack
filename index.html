@@ -8,8 +8,8 @@
   // Import the functions you need from the SDKs you need
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
+  import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 
   // Your web app's Firebase configuration
   // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -27,6 +27,14 @@
   // Initialize Firebase
   const app = initializeApp(firebaseConfig);
   const analytics = getAnalytics(app);
+  const db = getDatabase(app);
+  const auth = getAuth(app);
+
+  // Make available globally
+  window.firebaseApp = app;
+  window.firebaseDB = db;
+  window.firebaseAuth = auth;
+  window.firebaseRefs = { getDatabase, ref, set, onValue, update, getAuth, signInAnonymously, onAuthStateChanged };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -2060,31 +2068,23 @@ function saveEditedEmployee(){
 // ═══════════════════════════════════════
 //  FIREBASE REALTIME SYNC
 // ═══════════════════════════════════════
-let firebaseDB=null;
 let isSyncingFromServer=false;
-
-// Import Firebase Database and Auth libraries
-import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 
 function initFirebase(){
   try{
-    if(!window.app){
-      console.log('Firebase app not initialized');
+    if(!window.firebaseDB||!window.firebaseAuth){
+      console.log('Firebase not initialized yet');
+      setTimeout(initFirebase,500);
       return;
     }
-    // Get Database and Auth
-    const db=getDatabase(window.app);
-    const auth=getAuth(window.app);
     
-    window.firebaseDB=db;
-    window.firebaseAuth=auth;
+    const { signInAnonymously, onAuthStateChanged } = window.firebaseRefs;
     
     // Anonymous auth for real-time database
-    signInAnonymously(auth).catch(e=>console.log('Auth error:',e));
+    signInAnonymously(window.firebaseAuth).catch(e=>console.log('Auth error:',e));
     
     // Setup listeners when authenticated
-    onAuthStateChanged(auth,(user)=>{
+    onAuthStateChanged(window.firebaseAuth,(user)=>{
       if(user){
         window.currentUser=user;
         console.log('✓ Firebase multi-device sync ready');
@@ -2099,6 +2099,8 @@ function initFirebase(){
 function setupRealtimeListeners(){
   if(!window.firebaseDB||!window.currentUser)return;
   try{
+    const { ref, onValue } = window.firebaseRefs;
+    
     // EMPLOYEES - Real-time sync from all devices
     const empsRef=ref(window.firebaseDB,'stafftrack/emps');
     onValue(empsRef,(snapshot)=>{
@@ -2166,6 +2168,7 @@ function setupRealtimeListeners(){
 function syncToFirebase(){
   if(!window.firebaseDB||!window.currentUser||isSyncingFromServer)return;
   try{
+    const { ref, update } = window.firebaseRefs;
     const updates={};
     
     // Sync employees
