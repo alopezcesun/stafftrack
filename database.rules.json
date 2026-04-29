@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "stafftrack": {
+      ".read":  "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

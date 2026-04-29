@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "stafftrack": {
+      ".read": true,
+      ".write": true,
+      "emps": {
+        ".indexOn": ["no"]
+      },
+      "logs": {
+        ".indexOn": ["empNo"]
+      },
+      "users": {
+        ".indexOn": ["username"]
+      },
+      "areas": {
+        ".indexOn": [".value"]
+      }
+    }
+  }
+}
