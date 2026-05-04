@@ -1,8 +1,20 @@
 {
   "rules": {
     "stafftrack": {
-      ".read":  "auth != null",
-      ".write": "auth != null"
+      ".read": true,
+      ".write": true,
+      "emps": {
+        ".indexOn": ["no"]
+      },
+      "logs": {
+        ".indexOn": ["empNo"]
+      },
+      "users": {
+        ".indexOn": ["username"]
+      },
+      "areas": {
+        ".indexOn": [".value"]
+      }
     }
   }
 }

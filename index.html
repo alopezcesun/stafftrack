@@ -776,25 +776,26 @@ tbody tr:hover td{background:rgba(79,142,247,0.04);}
      from: Firebase Console → Project Settings → Your apps → SDK setup
      ═══════════════════════════════════════════════════════════ -->
 <script type="module">
-import { initializeApp }                    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, set, get, onValue, update, remove, push }
-                                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-import { getAuth, signInAnonymously }        from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { initializeApp }                    from 'https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js';
+import { getDatabase, ref, set, onValue, update } from 'https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js';
 
 // ─── YOUR FIREBASE CONFIG ────────────────────────────────────
 // Paste YOUR config here from Firebase Console
 const firebaseConfig = {
-  apiKey:            "PASTE_YOUR_API_KEY_HERE",
-  authDomain:        "PASTE_YOUR_AUTH_DOMAIN_HERE",
-  databaseURL:       "PASTE_YOUR_DATABASE_URL_HERE",
-  projectId:         "PASTE_YOUR_PROJECT_ID_HERE",
-  storageBucket:     "PASTE_YOUR_STORAGE_BUCKET_HERE",
-  messagingSenderId: "PASTE_YOUR_MESSAGING_SENDER_ID_HERE",
-  appId:             "PASTE_YOUR_APP_ID_HERE"
+  apiKey: "AIzaSyAVTj599t1-0SKmwTEkbEkKu2y2nR2Wczw",
+  authDomain: "jtj-stafftrack.firebaseapp.com",
+  databaseURL: "https://jtj-stafftrack-default-rtdb.firebaseio.com",
+  projectId: "jtj-stafftrack",
+  storageBucket: "jtj-stafftrack.firebasestorage.app",
+  messagingSenderId: "521894416034",
+  appId: "1:521894416034:web:a7d82dc807a7361898d1fb",
+  measurementId: "G-KHZ3580Y3X"
 };
 // ─────────────────────────────────────────────────────────────
 
 const app  = initializeApp(firebaseConfig);
+window.app = app;
 const db   = getDatabase(app);
 const auth = getAuth(app);
 
@@ -889,64 +890,173 @@ async function sv(k, v){
   CACHE[k] = v;
   // Mirror to localStorage as offline fallback
   localStorage.setItem(K[k], JSON.stringify(v));
-  if(fbConnected){
+  if(window.currentUser && !isSyncingFromServer){
     try { await fbSet('stafftrack/'+k, v); }
     catch(e){ console.error('Firebase write error:', e.message); }
   }
 }
 
 // ── Bootstrap: connect, auth, subscribe to live updates ────────────────────
-async function initFirebase(){
-  setFbBadge('connecting');
-  const authed = await fbAuth();
-  if(!authed){ setFbBadge('offline'); loadFromLocalStorage(); return; }
-
-  // Subscribe to all synced collections
-  // When any device writes, every device gets the update instantly
-  fbListen('stafftrack/users', val=>{
-    if(val) CACHE.users = val;
-    if(CU) refreshAll();   // re-render if logged in
-  });
-  fbListen('stafftrack/emps', val=>{
-    if(val) CACHE.emps = val;
-    if(CU) refreshAll();
-  });
-  fbListen('stafftrack/logs', val=>{
-    CACHE.logs = val ? Object.values(val) : [];
-    if(CU) refreshAll();
-  });
-  fbListen('stafftrack/areas', val=>{
-    if(val) CACHE.areas = Array.isArray(val) ? val : Object.values(val);
-    if(CU){ populateAreaSelects(); }
-  });
-
-  // Load initial values
-  try {
-    const [users, emps, logsRaw, areas] = await Promise.all([
-      fbGet('stafftrack/users'),
-      fbGet('stafftrack/emps'),
-      fbGet('stafftrack/logs'),
-      fbGet('stafftrack/areas'),
-    ]);
-
-    CACHE.users = users;
-    CACHE.emps  = emps;
-    CACHE.logs  = logsRaw ? (Array.isArray(logsRaw) ? logsRaw : Object.values(logsRaw)) : [];
-    CACHE.areas = areas ? (Array.isArray(areas) ? areas : Object.values(areas)) : [];
-
-    fbConnected = true;
-    setFbBadge('connected');
-
-    // First run — seed default data if nothing in Firebase yet
-    if(!CACHE.users) {
-      await seedDefaults();
+function initFirebase(){
+  try{
+    if(!window.app){
+      console.log('Firebase app not initialized');
+      return;
     }
-
-  } catch(e){
-    console.error('Firebase load error:', e.message);
-    setFbBadge('offline');
-    loadFromLocalStorage();
+    // Get Database and Auth
+    const db=getDatabase(window.app);
+    const auth=getAuth(window.app);
+    
+    window.firebaseDB=db;
+    window.firebaseAuth=auth;
+    
+    // Anonymous auth for real-time database
+    signInAnonymously(auth).catch(e=>console.log('Auth error:',e));
+    
+    // Setup listeners when authenticated
+    onAuthStateChanged(auth,(user)=>{
+      if(user){
+        window.currentUser=user;
+        console.log('✓ Firebase multi-device sync ready');
+        setFbBadge('connected');
+        setupRealtimeListeners();
+        // Load initial data
+        fbGet('stafftrack/users').then(val=>{ if(val) CACHE.users = val; });
+        fbGet('stafftrack/emps').then(val=>{ if(val) CACHE.emps = val; });
+        fbGet('stafftrack/logs').then(val=>{ 
+          CACHE.logs = val ? (Array.isArray(val) ? val : Object.values(val)) : [];
+        });
+        fbGet('stafftrack/areas').then(val=>{ 
+          if(val) CACHE.areas = Array.isArray(val) ? val : Object.values(val);
+        });
+        // Seed if no users
+        setTimeout(()=>{
+          if(!CACHE.users) seedDefaults();
+        },1000);
+      } else {
+        setFbBadge('offline');
+        loadFromLocalStorage();
+      }
+    });
+  }catch(e){
+    console.warn('Firebase init error:',e);
   }
+}
+
+let firebaseDB=null;
+let isSyncingFromServer=false;
+
+function setupRealtimeListeners(){
+  if(!window.firebaseDB||!window.currentUser)return;
+  try{
+    // EMPLOYEES - Real-time sync from all devices
+    const empsRef=ref(window.firebaseDB,'stafftrack/emps');
+    onValue(empsRef,(snapshot)=>{
+      if(isSyncingFromServer)return;
+      const data=snapshot.val();
+      if(data){
+        isSyncingFromServer=true;
+        sv(K.emps,data);
+        renderEmployees();
+        refreshAll();
+        isSyncingFromServer=false;
+        console.log('✓ Employees synced');
+      }
+    });
+    
+    // LOGS - Real-time sync from all devices
+    const logsRef=ref(window.firebaseDB,'stafftrack/logs');
+    onValue(logsRef,(snapshot)=>{
+      if(isSyncingFromServer)return;
+      const data=snapshot.val();
+      if(data){
+        isSyncingFromServer=true;
+        sv(K.logs,data);
+        renderLog();
+        refreshAll();
+        isSyncingFromServer=false;
+        console.log('✓ Logs synced');
+      }
+    });
+    
+    // USERS - Real-time sync from all devices
+    const usersRef=ref(window.firebaseDB,'stafftrack/users');
+    onValue(usersRef,(snapshot)=>{
+      if(isSyncingFromServer)return;
+      const data=snapshot.val();
+      if(data){
+        isSyncingFromServer=true;
+        sv(K.users,data);
+        if(document.getElementById('user-list'))renderUserList();
+        isSyncingFromServer=false;
+        console.log('✓ Users synced');
+      }
+    });
+    
+    // AREAS - Real-time sync from all devices
+    const areasRef=ref(window.firebaseDB,'stafftrack/areas');
+    onValue(areasRef,(snapshot)=>{
+      if(isSyncingFromServer)return;
+      const data=snapshot.val();
+      if(data){
+        isSyncingFromServer=true;
+        sv(K.areas,data);
+        populateAreaSelects();
+        isSyncingFromServer=false;
+        console.log('✓ Areas synced');
+      }
+    });
+    
+    console.log('✓ Multi-device listeners activated');
+  }catch(e){
+    console.warn('Listener error:',e);
+  }
+}
+
+function syncToFirebase(){
+  if(!window.firebaseDB||!window.currentUser||isSyncingFromServer)return;
+  try{
+    const updates={};
+    
+    // Sync employees
+    const emps=ld(K.emps);
+    if(emps)updates['stafftrack/emps']=emps;
+    
+    // Sync logs
+    const logs=ld(K.logs);
+    if(logs)updates['stafftrack/logs']=logs;
+    
+    // Sync users
+    const users=ld(K.users);
+    if(users)updates['stafftrack/users']=users;
+    
+    // Sync areas
+    const areas=ld(K.areas);
+    if(areas)updates['stafftrack/areas']=areas;
+    
+    // Send to Firebase
+    if(Object.keys(updates).length>0){
+      update(ref(window.firebaseDB),updates).then(()=>{
+        console.log('✓ Data synced to Firebase');
+      }).catch(e=>{
+        console.warn('Sync failed:',e);
+      });
+    }
+  }catch(e){
+    console.warn('Sync error:',e);
+  }
+}
+
+// Auto-sync every 15 seconds
+setInterval(()=>{
+  syncToFirebase();
+},15000);
+
+// Manual sync button
+function manualSyncNow(){
+  syncToFirebase();
+  const msg=document.getElementById('settings-msg');
+  if(msg)showMsg(msg,'Data synced to cloud!','ok');
 }
 
 function loadFromLocalStorage(){
@@ -1024,6 +1134,7 @@ function initData(){
 let CU=null;
 
 function doLogin(){
+  if (!CACHE.users) loadFromLocalStorage();
   const u=document.getElementById('li-user').value.trim();
   const p=document.getElementById('li-pass').value;
   const found=(ld('users')||[]).find(x=>x.username===u&&x.password===p);
